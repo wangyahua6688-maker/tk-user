@@ -2,11 +2,11 @@ package repo
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 
 	"github.com/go-redis/redis/v8"
 	"gorm.io/gorm"
+	redisx "tk-common/utils/redisx/v8"
 )
 
 // Repository 评论微服务数据访问层。
@@ -64,17 +64,12 @@ func NewRepository(
 
 // loadCache 从 Redis 读取缓存并反序列化。
 func (r *Repository) loadCache(ctx context.Context, key string, out any) bool {
-	// Redis 未配置时直接跳过缓存路径。
-	if r.redis == nil {
+	// 统一复用 common-utils 的 Redis JSON 读取逻辑。
+	hit, err := redisx.GetJSON(ctx, r.redis, key, out)
+	if err != nil {
 		return false
 	}
-	// 读取缓存原始字节。
-	raw, err := r.redis.Get(ctx, key).Bytes()
-	if err != nil || len(raw) == 0 {
-		return false
-	}
-	// 反序列化失败视为缓存无效。
-	return json.Unmarshal(raw, out) == nil
+	return hit
 }
 
 // saveCache 将对象序列化后写入 Redis。
@@ -83,11 +78,6 @@ func (r *Repository) saveCache(ctx context.Context, key string, data any) {
 	if r.redis == nil || r.cacheTTL <= 0 {
 		return
 	}
-	// 序列化失败直接丢弃，不影响主业务。
-	raw, err := json.Marshal(data)
-	if err != nil {
-		return
-	}
 	// 写缓存失败不抛错，避免影响主流程。
-	_ = r.redis.Set(ctx, key, raw, r.cacheTTL).Err()
+	_ = redisx.SetJSON(ctx, r.redis, key, data, r.cacheTTL)
 }

@@ -12,7 +12,8 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
-	"tk-shared/models"
+	"tk-common/models"
+	redisx "tk-common/utils/redisx/v8"
 )
 
 var (
@@ -28,10 +29,10 @@ var (
 
 // SMSResult 短信发送响应。
 type SMSResult struct {
-	Phone      string `json:"phone"`
-	Purpose    string `json:"purpose"`
-	ExpiresSec int    `json:"expires_sec"`
-	MockMode   bool   `json:"mock_mode"`
+	Phone       string `json:"phone"`
+	Purpose     string `json:"purpose"`
+	ExpiresSec  int    `json:"expires_sec"`
+	MockMode    bool   `json:"mock_mode"`
 	PreviewCode string `json:"preview_code,omitempty"`
 }
 
@@ -84,7 +85,7 @@ func (r *Repository) SendSMSCode(ctx context.Context, phone string, purpose stri
 	code := fmt.Sprintf("%06d", time.Now().UnixNano()%1000000)
 	if r.redis != nil {
 		smsKey := fmt.Sprintf("tk:user:sms:%s:%s", purpose, phone)
-		if err := r.redis.Set(ctx, smsKey, code, codeTTL).Err(); err != nil {
+		if err := redisx.SetString(ctx, r.redis, smsKey, code, codeTTL); err != nil {
 			return SMSResult{}, err
 		}
 	}
@@ -237,8 +238,11 @@ func (r *Repository) ProfileByToken(ctx context.Context, accessToken string) (ma
 		return nil, fmt.Errorf("session storage unavailable")
 	}
 	key := fmt.Sprintf("tk:user:access:%s", token)
-	userIDRaw, err := r.redis.Get(ctx, key).Result()
+	userIDRaw, hit, err := redisx.GetString(ctx, r.redis, key)
 	if err != nil {
+		return nil, fmt.Errorf("access token invalid")
+	}
+	if !hit {
 		return nil, fmt.Errorf("access token invalid")
 	}
 	userID64, err := strconv.ParseUint(strings.TrimSpace(userIDRaw), 10, 64)
@@ -276,8 +280,11 @@ func (r *Repository) VerifySMSCode(ctx context.Context, phone string, purpose st
 		return true, nil
 	}
 	smsKey := fmt.Sprintf("tk:user:sms:%s:%s", purpose, phone)
-	cached, err := r.redis.Get(ctx, smsKey).Result()
+	cached, hit, err := redisx.GetString(ctx, r.redis, smsKey)
 	if err != nil {
+		return false, nil
+	}
+	if !hit {
 		return false, nil
 	}
 	if strings.TrimSpace(cached) != code {
@@ -285,7 +292,7 @@ func (r *Repository) VerifySMSCode(ctx context.Context, phone string, purpose st
 	}
 
 	// 3) 校验通过后删除验证码，防止重复使用。
-	_ = r.redis.Del(ctx, smsKey).Err()
+	_ = redisx.Del(ctx, r.redis, smsKey)
 	return true, nil
 }
 
@@ -299,23 +306,17 @@ func (r *Repository) checkSMSRateLimit(ctx context.Context, phone string, minute
 	minuteKey := fmt.Sprintf("tk:user:sms:minute:%s:%s", phone, now.Format("200601021504"))
 	dailyKey := fmt.Sprintf("tk:user:sms:daily:%s:%s", phone, now.Format("20060102"))
 
-	minuteCount, err := r.redis.Incr(ctx, minuteKey).Result()
+	minuteCount, err := redisx.IncrWithExpire(ctx, r.redis, minuteKey, time.Minute)
 	if err != nil {
 		return err
-	}
-	if minuteCount == 1 {
-		_ = r.redis.Expire(ctx, minuteKey, time.Minute).Err()
 	}
 	if int(minuteCount) > minuteLimit {
 		return fmt.Errorf("sms send too frequent")
 	}
 
-	dailyCount, err := r.redis.Incr(ctx, dailyKey).Result()
+	dailyCount, err := redisx.IncrWithExpire(ctx, r.redis, dailyKey, 24*time.Hour)
 	if err != nil {
 		return err
-	}
-	if dailyCount == 1 {
-		_ = r.redis.Expire(ctx, dailyKey, 24*time.Hour).Err()
 	}
 	if int(dailyCount) > dailyLimit {
 		return fmt.Errorf("sms daily limit reached")
@@ -358,15 +359,15 @@ func (r *Repository) issueSessionToken(ctx context.Context, user models.WUser) (
 	if r.redis != nil {
 		accessKey := fmt.Sprintf("tk:user:access:%s", accessToken)
 		refreshKey := fmt.Sprintf("tk:user:refresh:%s", refreshToken)
-		if err := r.redis.Set(ctx, accessKey, strconv.FormatUint(uint64(user.ID), 10), r.accessTokenTTL).Err(); err != nil {
+		if err := redisx.SetString(ctx, r.redis, accessKey, strconv.FormatUint(uint64(user.ID), 10), r.accessTokenTTL); err != nil {
 			return AuthResult{}, err
 		}
-		if err := r.redis.Set(ctx, refreshKey, strconv.FormatUint(uint64(user.ID), 10), r.refreshTokenTTL).Err(); err != nil {
+		if err := redisx.SetString(ctx, r.redis, refreshKey, strconv.FormatUint(uint64(user.ID), 10), r.refreshTokenTTL); err != nil {
 			return AuthResult{}, err
 		}
 		// 记录 access->refresh 关系，便于后续扩展注销逻辑。
 		pairKey := fmt.Sprintf("tk:user:access-refresh:%s", accessToken)
-		_ = r.redis.Set(ctx, pairKey, refreshToken, r.accessTokenTTL).Err()
+		_ = redisx.SetString(ctx, r.redis, pairKey, refreshToken, r.accessTokenTTL)
 	}
 
 	// 3) 更新登录时间。

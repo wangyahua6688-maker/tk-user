@@ -10,8 +10,8 @@ require (
 	google.golang.org/grpc v1.65.0
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/gorm v1.31.0
+	tk-common v0.0.0
 	tk-proto v0.0.0
-	tk-shared v0.0.0
 )
 
 require (
@@ -102,4 +102,4 @@ require (
 
 replace tk-proto => ../tk-proto
 
-replace tk-shared => ../tk-shared
+replace tk-common => ../tk-common

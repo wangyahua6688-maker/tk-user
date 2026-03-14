@@ -1,7 +1,10 @@
 package svc
 
 import (
+	"context"
+
 	"github.com/go-redis/redis/v8"
+	redisx "tk-common/utils/redisx/v8"
 	"tk-user/internal/config"
 	"tk-user/internal/platform/database"
 	"tk-user/internal/repo"
@@ -25,11 +28,11 @@ func NewServiceContext(c config.Config) (*ServiceContext, error) {
 	}
 
 	// 2) 初始化 Redis 客户端（仓储层内部按需使用）。
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     c.CacheRedis.Addr,
-		Password: c.CacheRedis.Password,
-		DB:       c.CacheRedis.DB,
-	})
+	redisCfg := redisx.DefaultConfig()
+	redisCfg.Addr = c.CacheRedis.Addr
+	redisCfg.Password = c.CacheRedis.Password
+	redisCfg.DB = c.CacheRedis.DB
+	redisClient, _ := redisx.NewClient(context.Background(), redisCfg)
 
 	// 3) 构建论坛仓储层，注入 DB + Redis + 缓存 TTL。
 	commentRepo := repo.NewRepository(
