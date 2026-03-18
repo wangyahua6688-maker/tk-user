@@ -10,7 +10,7 @@ CacheRedis:
   DB: 0
   CacheTTLSeconds: 10
 
-Auth:
+UserAuth:
   AccessTokenTTLSeconds: 86400
   RefreshTokenTTLSeconds: 604800
   SMSCodeTTLSeconds: 300

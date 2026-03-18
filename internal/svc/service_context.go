@@ -39,9 +39,9 @@ func NewServiceContext(c config.Config) (*ServiceContext, error) {
 		db,
 		redisClient,
 		c.CacheRedis.CacheTTLSeconds,
-		c.Auth.AccessTokenTTLSeconds,
-		c.Auth.RefreshTokenTTLSeconds,
-		c.Auth.SMSCodeTTLSeconds,
+		c.UserAuth.AccessTokenTTLSeconds,
+		c.UserAuth.RefreshTokenTTLSeconds,
+		c.UserAuth.SMSCodeTTLSeconds,
 	)
 	// 4) 返回服务上下文。
 	return &ServiceContext{Config: c, Redis: redisClient, CommentRepo: commentRepo}, nil

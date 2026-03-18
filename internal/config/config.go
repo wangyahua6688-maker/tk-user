@@ -21,8 +21,8 @@ type Config struct {
 		// CacheTTLSeconds 评论聚合缓存 TTL（秒）。
 		CacheTTLSeconds int
 	}
-	// Auth 用户认证与短信登录配置。
-	Auth struct {
+	// UserAuth 用户认证与短信登录配置。
+	UserAuth struct {
 		// AccessTokenTTLSeconds 访问令牌有效期（秒）。
 		AccessTokenTTLSeconds int
 		// RefreshTokenTTLSeconds 刷新令牌有效期（秒）。
