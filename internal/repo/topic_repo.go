@@ -6,11 +6,16 @@ import "context"
 func (r *Repository) ListTopics(ctx context.Context, limit int) ([]map[string]interface{}, error) {
 	// 旧接口复用新论坛查询逻辑，保持兼容。
 	result, err := r.ListForumTopics(ctx, ForumTopicQuery{
+		// 处理当前语句逻辑。
 		Limit: limit,
-		Feed:  "all",
+		// 处理当前语句逻辑。
+		Feed: "all",
 	})
+	// 判断条件并进入对应分支逻辑。
 	if err != nil {
+		// 返回当前处理结果。
 		return nil, err
 	}
+	// 返回当前处理结果。
 	return result.Items, nil
 }

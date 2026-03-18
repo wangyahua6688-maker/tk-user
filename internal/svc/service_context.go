@@ -20,27 +20,40 @@ type ServiceContext struct {
 	CommentRepo *repo.Repository
 }
 
+// NewServiceContext 创建ServiceContext实例。
 func NewServiceContext(c config.Config) (*ServiceContext, error) {
 	// 1) 初始化数据库连接。
 	db, err := database.NewMySQL(c.Database.DSN)
+	// 判断条件并进入对应分支逻辑。
 	if err != nil {
+		// 返回当前处理结果。
 		return nil, err
 	}
 
 	// 2) 初始化 Redis 客户端（仓储层内部按需使用）。
 	redisCfg := redisx.DefaultConfig()
+	// 更新当前变量或字段值。
 	redisCfg.Addr = c.CacheRedis.Addr
+	// 更新当前变量或字段值。
 	redisCfg.Password = c.CacheRedis.Password
+	// 更新当前变量或字段值。
 	redisCfg.DB = c.CacheRedis.DB
+	// 定义并初始化当前变量。
 	redisClient, _ := redisx.NewClient(context.Background(), redisCfg)
 
 	// 3) 构建论坛仓储层，注入 DB + Redis + 缓存 TTL。
 	commentRepo := repo.NewRepository(
+		// 处理当前语句逻辑。
 		db,
+		// 处理当前语句逻辑。
 		redisClient,
+		// 处理当前语句逻辑。
 		c.CacheRedis.CacheTTLSeconds,
+		// 处理当前语句逻辑。
 		c.UserAuth.AccessTokenTTLSeconds,
+		// 处理当前语句逻辑。
 		c.UserAuth.RefreshTokenTTLSeconds,
+		// 处理当前语句逻辑。
 		c.UserAuth.SMSCodeTTLSeconds,
 	)
 	// 4) 返回服务上下文。
