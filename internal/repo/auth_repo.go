@@ -2,8 +2,11 @@ package repo
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
+	"math/big"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -24,6 +27,8 @@ var (
 	errInvalidPassword = errors.New("invalid password")
 	// errSMSCodeInvalid 验证码错误或已过期。
 	errSMSCodeInvalid = errors.New("sms code invalid or expired")
+	// errSMSServiceUnavailable 短信服务不可用（Redis 依赖不可用）。
+	errSMSServiceUnavailable = errors.New("sms service unavailable")
 	// errUserDisabled 用户状态不可用。
 	errUserDisabled = errors.New("user disabled")
 )
@@ -107,20 +112,27 @@ func (r *Repository) SendSMSCode(ctx context.Context, phone string, purpose stri
 		return SMSResult{}, err
 	}
 
-	// 4) 生成验证码并写入缓存。
-	code := fmt.Sprintf("%06d", time.Now().UnixNano()%1000000)
+	// 4) Redis 不可用时直接失败，避免验证码链路 fail-open。
+	if r.redis == nil {
+		// 返回当前处理结果。
+		return SMSResult{}, errSMSServiceUnavailable
+	}
+	// 5) 生成验证码并写入缓存。
+	code, err := generateSMSCode()
 	// 判断条件并进入对应分支逻辑。
-	if r.redis != nil {
-		// 定义并初始化当前变量。
-		smsKey := fmt.Sprintf("tk:user:sms:%s:%s", purpose, phone)
-		// 判断条件并进入对应分支逻辑。
-		if err := redisx.SetString(ctx, r.redis, smsKey, code, codeTTL); err != nil {
-			// 返回当前处理结果。
-			return SMSResult{}, err
-		}
+	if err != nil {
+		// 返回当前处理结果。
+		return SMSResult{}, err
+	}
+	// 定义并初始化当前变量。
+	smsKey := fmt.Sprintf("tk:user:sms:%s:%s", purpose, phone)
+	// 判断条件并进入对应分支逻辑。
+	if err := redisx.SetString(ctx, r.redis, smsKey, code, codeTTL); err != nil {
+		// 返回当前处理结果。
+		return SMSResult{}, err
 	}
 
-	// 5) 当前阶段先返回 mock 预览码；正式短信网关可在此替换发送逻辑。
+	// 6) 当前阶段先返回 mock 预览码；正式短信网关可在此替换发送逻辑。
 	result := SMSResult{
 		// 处理当前语句逻辑。
 		Phone: phone,
@@ -132,7 +144,7 @@ func (r *Repository) SendSMSCode(ctx context.Context, phone string, purpose stri
 		MockMode: channel.MockMode == 1,
 	}
 	// 判断条件并进入对应分支逻辑。
-	if channel.MockMode == 1 {
+	if channel.MockMode == 1 && exposeSMSPreviewCode() {
 		// 更新当前变量或字段值。
 		result.PreviewCode = code
 	}
@@ -157,26 +169,30 @@ func (r *Repository) RegisterByPhone(ctx context.Context, phone string, password
 		return AuthResult{}, errInvalidPassword
 	}
 
-	// 2) 校验验证码（允许后台管理场景传空码以跳过）。
-	if strings.TrimSpace(smsCode) != "" {
-		// 定义并初始化当前变量。
-		ok, err := r.VerifySMSCode(ctx, phone, "register", smsCode)
-		// 判断条件并进入对应分支逻辑。
-		if err != nil {
-			// 返回当前处理结果。
-			return AuthResult{}, err
-		}
-		// 判断条件并进入对应分支逻辑。
-		if !ok {
-			// 返回当前处理结果。
-			return AuthResult{}, errSMSCodeInvalid
-		}
+	// 2) 注册必须校验短信验证码，空码直接拒绝。
+	smsCode = strings.TrimSpace(smsCode)
+	// 判断条件并进入对应分支逻辑。
+	if smsCode == "" {
+		// 返回当前处理结果。
+		return AuthResult{}, errSMSCodeInvalid
+	}
+	// 定义并初始化当前变量。
+	ok, err := r.VerifySMSCode(ctx, phone, "register", smsCode)
+	// 判断条件并进入对应分支逻辑。
+	if err != nil {
+		// 返回当前处理结果。
+		return AuthResult{}, err
+	}
+	// 判断条件并进入对应分支逻辑。
+	if !ok {
+		// 返回当前处理结果。
+		return AuthResult{}, errSMSCodeInvalid
 	}
 
 	// 3) 校验手机号是否已存在。
 	existed := models.WUser{}
 	// 定义并初始化当前变量。
-	err := r.db.WithContext(ctx).Where("phone = ?", phone).First(&existed).Error
+	err = r.db.WithContext(ctx).Where("phone = ?", phone).First(&existed).Error
 	// 判断条件并进入对应分支逻辑。
 	if err == nil && existed.ID > 0 {
 		// 返回当前处理结果。
@@ -394,8 +410,8 @@ func (r *Repository) VerifySMSCode(ctx context.Context, phone string, purpose st
 
 	// 2) Redis 读取缓存验证码。
 	if r.redis == nil {
-		// 无 Redis 时不启用验证码校验，避免阻塞联调。
-		return true, nil
+		// 返回当前处理结果。
+		return false, errSMSServiceUnavailable
 	}
 	// 定义并初始化当前变量。
 	smsKey := fmt.Sprintf("tk:user:sms:%s:%s", purpose, phone)
@@ -404,7 +420,7 @@ func (r *Repository) VerifySMSCode(ctx context.Context, phone string, purpose st
 	// 判断条件并进入对应分支逻辑。
 	if err != nil {
 		// 返回当前处理结果。
-		return false, nil
+		return false, err
 	}
 	// 判断条件并进入对应分支逻辑。
 	if !hit {
@@ -428,7 +444,7 @@ func (r *Repository) checkSMSRateLimit(ctx context.Context, phone string, minute
 	// 判断条件并进入对应分支逻辑。
 	if r.redis == nil {
 		// 返回当前处理结果。
-		return nil
+		return errSMSServiceUnavailable
 	}
 
 	// 定义并初始化当前变量。
@@ -517,26 +533,28 @@ func (r *Repository) issueSessionToken(ctx context.Context, user models.WUser) (
 	refreshToken := strings.ReplaceAll(uuid.NewString(), "-", "")
 
 	// 2) 写入 Redis 会话存储。
-	if r.redis != nil {
-		// 定义并初始化当前变量。
-		accessKey := fmt.Sprintf("tk:user:access:%s", accessToken)
-		// 定义并初始化当前变量。
-		refreshKey := fmt.Sprintf("tk:user:refresh:%s", refreshToken)
-		// 判断条件并进入对应分支逻辑。
-		if err := redisx.SetString(ctx, r.redis, accessKey, strconv.FormatUint(uint64(user.ID), 10), r.accessTokenTTL); err != nil {
-			// 返回当前处理结果。
-			return AuthResult{}, err
-		}
-		// 判断条件并进入对应分支逻辑。
-		if err := redisx.SetString(ctx, r.redis, refreshKey, strconv.FormatUint(uint64(user.ID), 10), r.refreshTokenTTL); err != nil {
-			// 返回当前处理结果。
-			return AuthResult{}, err
-		}
-		// 记录 access->refresh 关系，便于后续扩展注销逻辑。
-		pairKey := fmt.Sprintf("tk:user:access-refresh:%s", accessToken)
-		// 更新当前变量或字段值。
-		_ = redisx.SetString(ctx, r.redis, pairKey, refreshToken, r.accessTokenTTL)
+	if r.redis == nil {
+		// 返回当前处理结果。
+		return AuthResult{}, errSMSServiceUnavailable
 	}
+	// 定义并初始化当前变量。
+	accessKey := fmt.Sprintf("tk:user:access:%s", accessToken)
+	// 定义并初始化当前变量。
+	refreshKey := fmt.Sprintf("tk:user:refresh:%s", refreshToken)
+	// 判断条件并进入对应分支逻辑。
+	if err := redisx.SetString(ctx, r.redis, accessKey, strconv.FormatUint(uint64(user.ID), 10), r.accessTokenTTL); err != nil {
+		// 返回当前处理结果。
+		return AuthResult{}, err
+	}
+	// 判断条件并进入对应分支逻辑。
+	if err := redisx.SetString(ctx, r.redis, refreshKey, strconv.FormatUint(uint64(user.ID), 10), r.refreshTokenTTL); err != nil {
+		// 返回当前处理结果。
+		return AuthResult{}, err
+	}
+	// 记录 access->refresh 关系，便于后续扩展注销逻辑。
+	pairKey := fmt.Sprintf("tk:user:access-refresh:%s", accessToken)
+	// 更新当前变量或字段值。
+	_ = redisx.SetString(ctx, r.redis, pairKey, refreshToken, r.accessTokenTTL)
 
 	// 3) 更新登录时间。
 	now := time.Now()
@@ -612,6 +630,29 @@ func buildUserProfile(user models.WUser) map[string]interface{} {
 		// 处理当前语句逻辑。
 		"last_login_at": user.LastLoginAt,
 	}
+}
+
+// generateSMSCode 使用密码学安全随机源生成 6 位验证码。
+func generateSMSCode() (string, error) {
+	// 定义并初始化当前变量。
+	upper := big.NewInt(1000000)
+	// 定义并初始化当前变量。
+	n, err := rand.Int(rand.Reader, upper)
+	// 判断条件并进入对应分支逻辑。
+	if err != nil {
+		// 返回当前处理结果。
+		return "", err
+	}
+	// 返回当前处理结果。
+	return fmt.Sprintf("%06d", n.Int64()), nil
+}
+
+// exposeSMSPreviewCode 控制是否允许返回测试验证码。
+func exposeSMSPreviewCode() bool {
+	// 定义并初始化当前变量。
+	flag := strings.ToLower(strings.TrimSpace(os.Getenv("TK_USER_EXPOSE_SMS_PREVIEW")))
+	// 判断条件并进入对应分支逻辑。
+	return flag == "1" || flag == "true" || flag == "yes" || flag == "on"
 }
 
 // right 返回字符串右侧 n 位字符。

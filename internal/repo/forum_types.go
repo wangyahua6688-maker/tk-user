@@ -1,7 +1,5 @@
 package repo
 
-import "time"
-
 // ForumTopicQuery 论坛列表查询参数。
 type ForumTopicQuery struct {
 	// Limit 单次返回条数上限。
@@ -44,24 +42,4 @@ type forumIssueRow struct {
 	Year int `json:"year"`
 	// Issue 期号。
 	Issue string `json:"issue"`
-}
-
-// forumDrawPayload 论坛详情页顶部开奖区块数据。
-type forumDrawPayload struct {
-	// ID 开奖记录ID。
-	ID uint `json:"id"`
-	// Issue 开奖期号。
-	Issue string `json:"issue"`
-	// DrawAt 开奖时间。
-	DrawAt time.Time `json:"draw_at"`
-	// SpecialLotteryID 所属彩种ID。
-	SpecialLotteryID uint `json:"special_lottery_id"`
-	// Numbers 开奖号码（6+1）。
-	Numbers []int `json:"numbers"`
-	// Labels 号码标签（生肖/五行）。
-	Labels []string `json:"labels"`
-	// ZodiacLabels 生肖标签。
-	ZodiacLabels []string `json:"zodiac_labels"`
-	// WuxingLabels 五行标签。
-	WuxingLabels []string `json:"wuxing_labels"`
 }

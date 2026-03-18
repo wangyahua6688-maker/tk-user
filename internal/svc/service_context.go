@@ -2,6 +2,8 @@ package svc
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/go-redis/redis/v8"
 	redisx "tk-common/utils/redisx/v8"
@@ -33,13 +35,23 @@ func NewServiceContext(c config.Config) (*ServiceContext, error) {
 	// 2) 初始化 Redis 客户端（仓储层内部按需使用）。
 	redisCfg := redisx.DefaultConfig()
 	// 更新当前变量或字段值。
-	redisCfg.Addr = c.CacheRedis.Addr
+	redisCfg.Addr = strings.TrimSpace(c.CacheRedis.Addr)
 	// 更新当前变量或字段值。
 	redisCfg.Password = c.CacheRedis.Password
 	// 更新当前变量或字段值。
 	redisCfg.DB = c.CacheRedis.DB
+	// 判断条件并进入对应分支逻辑。
+	if redisCfg.Addr == "" {
+		// 返回当前处理结果。
+		return nil, fmt.Errorf("cache redis addr is empty")
+	}
 	// 定义并初始化当前变量。
-	redisClient, _ := redisx.NewClient(context.Background(), redisCfg)
+	redisClient, err := redisx.NewClient(context.Background(), redisCfg)
+	// 判断条件并进入对应分支逻辑。
+	if err != nil {
+		// 返回当前处理结果。
+		return nil, fmt.Errorf("init redis failed: %w", err)
+	}
 
 	// 3) 构建论坛仓储层，注入 DB + Redis + 缓存 TTL。
 	commentRepo := repo.NewRepository(
