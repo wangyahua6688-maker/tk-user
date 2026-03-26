@@ -1,0 +1,16 @@
+Name: tk-user
+ListenOn: 0.0.0.0:9103
+
+Database:
+  DSN: "root:12345678@tcp(mysql:3306)/nb_sys_001?charset=utf8mb4&parseTime=True&loc=Local"
+
+CacheRedis:
+  Addr: "redis:6379"
+  Password: ""
+  DB: 0
+  CacheTTLSeconds: 10
+
+UserAuth:
+  AccessTokenTTLSeconds: 86400
+  RefreshTokenTTLSeconds: 604800
+  SMSCodeTTLSeconds: 300

@@ -1,0 +1,6 @@
+
+# IDE files
+.idea/
+
+# OS generated files
+.DS_Store
