@@ -2,11 +2,9 @@ package server
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	tkv1 "github.com/wangyahua6688-maker/tk-proto/gen/go/tk/v1"
-	"gorm.io/gorm"
 	"tk-user/internal/dto"
 	"tk-user/internal/svc"
 )
@@ -126,13 +124,12 @@ func (f *ForumRPC) ForumTopicDetail(ctx context.Context, req *tkv1.ForumTopicDet
 	payload, err := f.forumSvc.ForumTopicDetail(ctx, postID)
 	// 判断条件并进入对应分支逻辑。
 	if err != nil {
-		// 判断条件并进入对应分支逻辑。
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			// 返回当前处理结果。
-			return &tkv1.JsonDataReply{Code: 40431, Msg: "post not found"}, nil
-		}
 		// 返回当前处理结果。
 		return &tkv1.JsonDataReply{Code: 50031, Msg: "failed to load topic detail"}, nil
+	}
+	if payload == nil {
+		// 返回当前处理结果。
+		return &tkv1.JsonDataReply{Code: 40431, Msg: "post not found"}, nil
 	}
 	// 3) 返回详情数据。
 	return marshalOK(payload)

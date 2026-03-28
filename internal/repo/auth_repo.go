@@ -143,13 +143,12 @@ func (r *AuthRepository) RegisterByPhone(ctx context.Context, phone string, pass
 	var result AuthResult
 	err = cmdx.TryLockFunc(ctx, r.redis, lockKey, rediskey.LockRegisterTTL, func() error {
 		// 3.1) 在锁内再次检查手机号是否已存在（双重检查）
-		existed := models.WUser{}
-		dbErr := r.db.WithContext(ctx).Where("phone = ?", phone).First(&existed).Error
-		if dbErr == nil && existed.ID > 0 {
-			return fmt.Errorf("phone already registered")
-		}
-		if dbErr != nil && !errors.Is(dbErr, gorm.ErrRecordNotFound) {
+		existed, dbErr := r.findUserByPhone(ctx, phone)
+		if dbErr != nil {
 			return dbErr
+		}
+		if existed != nil && existed.ID > 0 {
+			return fmt.Errorf("phone already registered")
 		}
 
 		// 3.2) 生成密码哈希并入库
@@ -205,6 +204,10 @@ func (r *AuthRepository) LoginByPassword(ctx context.Context, phone string, pass
 		_ = r.recordLoginFailure(ctx, phone)
 		return AuthResult{}, err
 	}
+	if user == nil {
+		_ = r.recordLoginFailure(ctx, phone)
+		return AuthResult{}, fmt.Errorf("phone or password incorrect")
+	}
 	if user.Status != 1 {
 		return AuthResult{}, errUserDisabled
 	}
@@ -239,10 +242,10 @@ func (r *AuthRepository) LoginBySMS(ctx context.Context, phone string, smsCode s
 
 	// 2) 查询用户，不存在则自动创建
 	user, err := r.findUserByPhone(ctx, phone)
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err != nil {
 		return AuthResult{}, err
 	}
-	if errors.Is(err, gorm.ErrRecordNotFound) || user == nil {
+	if user == nil {
 		user = &models.WUser{
 			Username:       "u" + phone,
 			Phone:          phone,
@@ -294,6 +297,9 @@ func (r *AuthRepository) ProfileByToken(ctx context.Context, accessToken string)
 	user := models.WUser{}
 	if err := r.db.WithContext(ctx).Where("id = ?", userID64).First(&user).Error; err != nil {
 		return nil, err
+	}
+	if user.ID == 0 {
+		return nil, fmt.Errorf("access token invalid")
 	}
 	return buildUserProfile(user), nil
 }
@@ -526,6 +532,9 @@ func (r *AuthRepository) findUserByPhone(ctx context.Context, phone string) (*mo
 	}
 	row := models.WUser{}
 	if err := r.db.WithContext(ctx).Where("phone = ?", phone).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return &row, nil

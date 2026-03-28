@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/wangyahua6688-maker/tk-common/models"
@@ -13,7 +14,7 @@ func (r *ForumRepository) ForumTopicDetail(ctx context.Context, postID uint) (ma
 	// 1) postID 必须有效。
 	if postID == 0 {
 		// 返回当前处理结果。
-		return nil, gorm.ErrRecordNotFound
+		return nil, nil
 	}
 
 	// 2) 查询帖子主体 + 用户 + 评论聚合 + 图纸期号信息。
@@ -57,6 +58,9 @@ func (r *ForumRepository) ForumTopicDetail(ctx context.Context, postID uint) (ma
 		First(&row).Error
 	// 判断条件并进入对应分支逻辑。
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
 		// 返回当前处理结果。
 		return nil, err
 	}
