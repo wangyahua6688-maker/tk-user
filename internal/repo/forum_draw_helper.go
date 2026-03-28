@@ -11,7 +11,7 @@ import (
 )
 
 // resolveForumDrawPayload 根据帖子关联关系解析“详情页顶部开奖块”。
-func (r *Repository) resolveForumDrawPayload(ctx context.Context, row topicRow) (map[string]interface{}, error) {
+func (r *ForumRepository) resolveForumDrawPayload(ctx context.Context, row topicRow) (map[string]interface{}, error) {
 	// 1) 优先按 lottery_info_id 直接命中开奖记录（兼容把 draw_record_id 存在该字段的场景）。
 	if row.LotteryInfoID > 0 {
 		// 定义并初始化当前变量。
@@ -105,7 +105,7 @@ func (r *Repository) resolveForumDrawPayload(ctx context.Context, row topicRow) 
 }
 
 // buildForumDrawFromRecord 将开奖记录转换为论坛详情顶部开奖结构。
-func (r *Repository) buildForumDrawFromRecord(record models.WDrawRecord) map[string]interface{} {
+func (r *ForumRepository) buildForumDrawFromRecord(record models.WDrawRecord) map[string]interface{} {
 	// 1) 解析 6+1 号码。
 	numbers := extractDrawNumbersFromRecord(record)
 	// 2) 提取“生肖/五行”组合标签与独立标签。
@@ -138,7 +138,7 @@ func (r *Repository) buildForumDrawFromRecord(record models.WDrawRecord) map[str
 }
 
 // buildForumDrawFromInfo 将图库图纸中的开奖字段兜底转换为开奖块。
-func (r *Repository) buildForumDrawFromInfo(info models.WLotteryInfo) map[string]interface{} {
+func (r *ForumRepository) buildForumDrawFromInfo(info models.WLotteryInfo) map[string]interface{} {
 	// 1) 解析图纸内置开奖串。
 	numbers := extractDrawNumbersFromInfo(info)
 	// 2) 图纸无独立标签字段时，用占位“生肖/五行”规则生成。

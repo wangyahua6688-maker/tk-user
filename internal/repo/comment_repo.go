@@ -7,7 +7,7 @@ import (
 )
 
 // LotteryCommentGroups 返回彩种详情页评论数据分组。
-func (r *Repository) LotteryCommentGroups(ctx context.Context, infoID uint) (LotteryCommentGroups, error) {
+func (r *ForumRepository) LotteryCommentGroups(ctx context.Context, infoID uint) (LotteryCommentGroups, error) {
 	// 1) 评论分组优先查缓存。
 	cacheKey := fmt.Sprintf("tk:comment:groups:%d", infoID)
 	// 定义并初始化当前变量。
@@ -65,7 +65,7 @@ func (r *Repository) LotteryCommentGroups(ctx context.Context, infoID uint) (Lot
 }
 
 // listLotteryComments 处理listLotteryComments相关逻辑。
-func (r *Repository) listLotteryComments(ctx context.Context, infoID uint, limit int, orderBy string, userTypes []string) ([]commentRow, error) {
+func (r *ForumRepository) listLotteryComments(ctx context.Context, infoID uint, limit int, orderBy string, userTypes []string) ([]commentRow, error) {
 	// 1) 构建评论 + 用户信息联合查询。
 	rows := make([]commentRow, 0)
 	// 定义并初始化当前变量。

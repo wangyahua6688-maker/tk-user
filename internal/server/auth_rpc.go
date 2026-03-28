@@ -5,12 +5,43 @@ import (
 	"strings"
 
 	tkv1 "github.com/wangyahua6688-maker/tk-proto/gen/go/tk/v1"
+	"tk-user/internal/dto"
+	"tk-user/internal/svc"
 )
 
+// authService 定义鉴权相关依赖。
+type authService interface {
+	SendSMSCode(ctx context.Context, phone string, purpose string) (dto.SMSResult, error)
+	RegisterByPhone(ctx context.Context, phone string, password string, smsCode string, nickname string) (dto.AuthResult, error)
+	LoginByPassword(ctx context.Context, phone string, password string) (dto.AuthResult, error)
+	LoginBySMS(ctx context.Context, phone string, smsCode string) (dto.AuthResult, error)
+	ProfileByToken(ctx context.Context, accessToken string) (map[string]interface{}, error)
+}
+
+// AuthRPC 负责短信、注册、登录、资料读取相关 RPC。
+type AuthRPC struct {
+	authSvc authService
+}
+
+// AuthRPCDeps 定义鉴权模块依赖。
+type AuthRPCDeps struct {
+	AuthService authService
+}
+
+// NewAuthRPC 根据服务上下文创建鉴权模块 RPC。
+func NewAuthRPC(ctx *svc.ServiceContext) *AuthRPC {
+	return NewAuthRPCWithDeps(AuthRPCDeps{AuthService: ctx.AuthService})
+}
+
+// NewAuthRPCWithDeps 使用显式依赖创建鉴权模块 RPC。
+func NewAuthRPCWithDeps(deps AuthRPCDeps) *AuthRPC {
+	return &AuthRPC{authSvc: deps.AuthService}
+}
+
 // SendSMSCode 发送短信验证码（登录/注册）。
-func (s *UserServer) SendSMSCode(ctx context.Context, req *tkv1.AuthSendCodeRequest) (*tkv1.JsonDataReply, error) {
+func (a *AuthRPC) SendSMSCode(ctx context.Context, req *tkv1.AuthSendCodeRequest) (*tkv1.JsonDataReply, error) {
 	// 1) 调用仓储层执行验证码发送和频控。
-	payload, err := s.ctx.CommentRepo.SendSMSCode(ctx, req.GetPhone(), req.GetPurpose())
+	payload, err := a.authSvc.SendSMSCode(ctx, req.GetPhone(), req.GetPurpose())
 	// 判断条件并进入对应分支逻辑。
 	if err != nil {
 		// 返回当前处理结果。
@@ -21,9 +52,9 @@ func (s *UserServer) SendSMSCode(ctx context.Context, req *tkv1.AuthSendCodeRequ
 }
 
 // RegisterByPhone 手机号注册。
-func (s *UserServer) RegisterByPhone(ctx context.Context, req *tkv1.AuthRegisterRequest) (*tkv1.JsonDataReply, error) {
+func (a *AuthRPC) RegisterByPhone(ctx context.Context, req *tkv1.AuthRegisterRequest) (*tkv1.JsonDataReply, error) {
 	// 1) 创建用户并签发登录态。
-	payload, err := s.ctx.CommentRepo.RegisterByPhone(
+	payload, err := a.authSvc.RegisterByPhone(
 		// 处理当前语句逻辑。
 		ctx,
 		// 调用req.GetPhone完成当前处理。
@@ -45,9 +76,9 @@ func (s *UserServer) RegisterByPhone(ctx context.Context, req *tkv1.AuthRegister
 }
 
 // LoginByPassword 手机号密码登录。
-func (s *UserServer) LoginByPassword(ctx context.Context, req *tkv1.AuthPasswordLoginRequest) (*tkv1.JsonDataReply, error) {
+func (a *AuthRPC) LoginByPassword(ctx context.Context, req *tkv1.AuthPasswordLoginRequest) (*tkv1.JsonDataReply, error) {
 	// 1) 校验并签发 token。
-	payload, err := s.ctx.CommentRepo.LoginByPassword(ctx, req.GetPhone(), req.GetPassword())
+	payload, err := a.authSvc.LoginByPassword(ctx, req.GetPhone(), req.GetPassword())
 	// 判断条件并进入对应分支逻辑。
 	if err != nil {
 		// 返回当前处理结果。
@@ -58,9 +89,9 @@ func (s *UserServer) LoginByPassword(ctx context.Context, req *tkv1.AuthPassword
 }
 
 // LoginBySMS 手机号验证码登录。
-func (s *UserServer) LoginBySMS(ctx context.Context, req *tkv1.AuthSMSLoginRequest) (*tkv1.JsonDataReply, error) {
+func (a *AuthRPC) LoginBySMS(ctx context.Context, req *tkv1.AuthSMSLoginRequest) (*tkv1.JsonDataReply, error) {
 	// 1) 校验验证码并创建/登录账号。
-	payload, err := s.ctx.CommentRepo.LoginBySMS(ctx, req.GetPhone(), req.GetSmsCode())
+	payload, err := a.authSvc.LoginBySMS(ctx, req.GetPhone(), req.GetSmsCode())
 	// 判断条件并进入对应分支逻辑。
 	if err != nil {
 		// 返回当前处理结果。
@@ -71,7 +102,7 @@ func (s *UserServer) LoginBySMS(ctx context.Context, req *tkv1.AuthSMSLoginReque
 }
 
 // Profile 根据 access token 获取用户资料。
-func (s *UserServer) Profile(ctx context.Context, req *tkv1.AuthProfileRequest) (*tkv1.JsonDataReply, error) {
+func (a *AuthRPC) Profile(ctx context.Context, req *tkv1.AuthProfileRequest) (*tkv1.JsonDataReply, error) {
 	// 1) token 优先使用 RPC 字段，兼容传入 Bearer 前缀。
 	token := strings.TrimSpace(req.GetAccessToken())
 	// 更新当前变量或字段值。
@@ -83,7 +114,7 @@ func (s *UserServer) Profile(ctx context.Context, req *tkv1.AuthProfileRequest) 
 	}
 
 	// 2) 读取资料。
-	profile, err := s.ctx.CommentRepo.ProfileByToken(ctx, token)
+	profile, err := a.authSvc.ProfileByToken(ctx, token)
 	// 判断条件并进入对应分支逻辑。
 	if err != nil {
 		// 返回当前处理结果。

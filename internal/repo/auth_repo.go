@@ -18,6 +18,9 @@ import (
 	"strings"
 	"time"
 	"tk-user/internal/constants/rediskey"
+	"tk-user/internal/dto"
+
+	"google.golang.org/grpc/metadata"
 )
 
 // 声明当前变量。
@@ -36,27 +39,17 @@ var (
 	errLoginTooManyFailures = errors.New("too many login failures, please try again later")
 )
 
-// SMSResult 短信发送响应。
-type SMSResult struct {
-	Phone       string `json:"phone"`
-	Purpose     string `json:"purpose"`
-	ExpiresSec  int    `json:"expires_sec"`
-	MockMode    bool   `json:"mock_mode"`
-	PreviewCode string `json:"preview_code,omitempty"`
-}
+// SMSResult 为认证结果 DTO 的兼容别名。
+type SMSResult = dto.SMSResult
 
-// AuthResult 用户登录/注册成功后的统一返回结构。
-type AuthResult struct {
-	AccessToken  string                 `json:"access_token"`
-	RefreshToken string                 `json:"refresh_token"`
-	User         map[string]interface{} `json:"user"`
-}
+// AuthResult 为认证结果 DTO 的兼容别名。
+type AuthResult = dto.AuthResult
 
 // phoneRegexp 中国大陆手机号校验规则（11 位且以 1 开头）。
 var phoneRegexp = regexp.MustCompile(`^1\d{10}$`)
 
 // SendSMSCode 发送短信验证码，内置手机号 + IP 双维度频控。
-func (r *Repository) SendSMSCode(ctx context.Context, phone string, purpose string) (SMSResult, error) {
+func (r *AuthRepository) SendSMSCode(ctx context.Context, phone string, purpose string) (SMSResult, error) {
 	// 1) 归一化参数
 	phone = strings.TrimSpace(phone)
 	if !phoneRegexp.MatchString(phone) {
@@ -121,7 +114,7 @@ func (r *Repository) SendSMSCode(ctx context.Context, phone string, purpose stri
 }
 
 // RegisterByPhone 手机号注册（含分布式锁防并发重复注册）。
-func (r *Repository) RegisterByPhone(ctx context.Context, phone string, password string, smsCode string, nickname string) (AuthResult, error) {
+func (r *AuthRepository) RegisterByPhone(ctx context.Context, phone string, password string, smsCode string, nickname string) (AuthResult, error) {
 	// 1) 参数校验
 	phone = strings.TrimSpace(phone)
 	if !phoneRegexp.MatchString(phone) {
@@ -199,7 +192,7 @@ func (r *Repository) RegisterByPhone(ctx context.Context, phone string, password
 }
 
 // LoginByPassword 密码登录（含登录失败次数限制）。
-func (r *Repository) LoginByPassword(ctx context.Context, phone string, password string) (AuthResult, error) {
+func (r *AuthRepository) LoginByPassword(ctx context.Context, phone string, password string) (AuthResult, error) {
 	// 1) 检查登录失败次数（手机号维度）
 	if err := r.checkLoginFailLimit(ctx, phone); err != nil {
 		return AuthResult{}, err
@@ -234,7 +227,7 @@ func (r *Repository) LoginByPassword(ctx context.Context, phone string, password
 }
 
 // LoginBySMS 短信验证码登录（手机号不存在时自动注册）。
-func (r *Repository) LoginBySMS(ctx context.Context, phone string, smsCode string) (AuthResult, error) {
+func (r *AuthRepository) LoginBySMS(ctx context.Context, phone string, smsCode string) (AuthResult, error) {
 	// 1) 校验验证码
 	ok, err := r.VerifySMSCode(ctx, phone, "login", smsCode)
 	if err != nil {
@@ -271,7 +264,7 @@ func (r *Repository) LoginBySMS(ctx context.Context, phone string, smsCode strin
 }
 
 // ProfileByToken 根据 AccessToken 读取用户资料（走 Redis 会话缓存）。
-func (r *Repository) ProfileByToken(ctx context.Context, accessToken string) (map[string]interface{}, error) {
+func (r *AuthRepository) ProfileByToken(ctx context.Context, accessToken string) (map[string]interface{}, error) {
 	// 1) 归一化 token
 	token := strings.TrimSpace(accessToken)
 	token = strings.TrimSpace(strings.TrimPrefix(token, "Bearer "))
@@ -306,7 +299,7 @@ func (r *Repository) ProfileByToken(ctx context.Context, accessToken string) (ma
 }
 
 // VerifySMSCode 校验验证码（校验通过后立即删除，防重放）。
-func (r *Repository) VerifySMSCode(ctx context.Context, phone string, purpose string, code string) (bool, error) {
+func (r *AuthRepository) VerifySMSCode(ctx context.Context, phone string, purpose string, code string) (bool, error) {
 	// 1) 参数校验
 	phone = strings.TrimSpace(phone)
 	if !phoneRegexp.MatchString(phone) {
@@ -347,7 +340,7 @@ func (r *Repository) VerifySMSCode(ctx context.Context, phone string, purpose st
 // ─────────────────────────────────────────────
 
 // checkSMSRateLimit 执行短信发送频控（手机号分钟 + 日级 + IP 分钟）。
-func (r *Repository) checkSMSRateLimit(ctx context.Context, phone, clientIP string, minuteLimit int, dailyLimit int) error {
+func (r *AuthRepository) checkSMSRateLimit(ctx context.Context, phone, clientIP string, minuteLimit int, dailyLimit int) error {
 	if r.redis == nil {
 		return errSMSServiceUnavailable
 	}
@@ -396,7 +389,7 @@ func (r *Repository) checkSMSRateLimit(ctx context.Context, phone, clientIP stri
 }
 
 // checkLoginFailLimit 检查密码登录失败次数是否超限。
-func (r *Repository) checkLoginFailLimit(ctx context.Context, phone string) error {
+func (r *AuthRepository) checkLoginFailLimit(ctx context.Context, phone string) error {
 	if r.redis == nil {
 		return nil // Redis 不可用时跳过限制（fail-open）
 	}
@@ -414,7 +407,7 @@ func (r *Repository) checkLoginFailLimit(ctx context.Context, phone string) erro
 }
 
 // recordLoginFailure 记录一次密码登录失败。
-func (r *Repository) recordLoginFailure(ctx context.Context, phone string) error {
+func (r *AuthRepository) recordLoginFailure(ctx context.Context, phone string) error {
 	if r.redis == nil {
 		return nil
 	}
@@ -424,7 +417,7 @@ func (r *Repository) recordLoginFailure(ctx context.Context, phone string) error
 }
 
 // clearLoginFailure 登录成功后清空失败计数。
-func (r *Repository) clearLoginFailure(ctx context.Context, phone string) error {
+func (r *AuthRepository) clearLoginFailure(ctx context.Context, phone string) error {
 	if r.redis == nil {
 		return nil
 	}
@@ -435,7 +428,7 @@ func (r *Repository) clearLoginFailure(ctx context.Context, phone string) error 
 
 // extractClientIP 从 context 中提取客户端 IP（由 gRPC 元数据或 HTTP 中间件注入）。
 // 若未注入则返回空字符串（限流将跳过 IP 维度）。
-func (r *Repository) extractClientIP(ctx context.Context) string {
+func (r *AuthRepository) extractClientIP(ctx context.Context) string {
 	if ctx == nil {
 		return ""
 	}
@@ -443,11 +436,21 @@ func (r *Repository) extractClientIP(ctx context.Context) string {
 	if ip, ok := ctx.Value("client_ip").(string); ok {
 		return strings.TrimSpace(ip)
 	}
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		for _, key := range []string{"x-client-ip", "client_ip"} {
+			values := md.Get(key)
+			if len(values) > 0 {
+				if ip := strings.TrimSpace(values[0]); ip != "" {
+					return ip
+				}
+			}
+		}
+	}
 	return ""
 }
 
 // issueSessionToken 生成访问令牌与刷新令牌并更新用户登录时间。
-func (r *Repository) issueSessionToken(ctx context.Context, user models.WUser) (AuthResult, error) {
+func (r *AuthRepository) issueSessionToken(ctx context.Context, user models.WUser) (AuthResult, error) {
 	// 1) 生成随机 Token（UUID 去掉横线）
 	accessToken := strings.ReplaceAll(uuid.NewString(), "-", "")
 	refreshToken := strings.ReplaceAll(uuid.NewString(), "-", "")
@@ -491,7 +494,7 @@ func (r *Repository) issueSessionToken(ctx context.Context, user models.WUser) (
 }
 
 // loadActiveSMSChannel 读取当前启用的短信通道配置。
-func (r *Repository) loadActiveSMSChannel(ctx context.Context) (models.WSMSChannel, error) {
+func (r *AuthRepository) loadActiveSMSChannel(ctx context.Context) (models.WSMSChannel, error) {
 	channel := models.WSMSChannel{}
 	err := r.db.WithContext(ctx).
 		Where("status = 1").
@@ -516,7 +519,7 @@ func (r *Repository) loadActiveSMSChannel(ctx context.Context) (models.WSMSChann
 }
 
 // findUserByPhone 按手机号查询用户。
-func (r *Repository) findUserByPhone(ctx context.Context, phone string) (*models.WUser, error) {
+func (r *AuthRepository) findUserByPhone(ctx context.Context, phone string) (*models.WUser, error) {
 	phone = strings.TrimSpace(phone)
 	if !phoneRegexp.MatchString(phone) {
 		return nil, errInvalidPhone

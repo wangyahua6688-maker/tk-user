@@ -2,6 +2,8 @@ package repo
 
 import "time"
 
+import "tk-user/internal/dto"
+
 // topicRow 帖子列表查询结果行（包含聚合评论数）。
 type topicRow struct {
 	// 处理当前语句逻辑。
@@ -66,14 +68,5 @@ type commentRow struct {
 	UserType string `json:"user_type"`
 }
 
-// LotteryCommentGroups 为彩种详情页提供四组评论数据。
-type LotteryCommentGroups struct {
-	// 处理当前语句逻辑。
-	SystemComments []map[string]interface{} `json:"system_comments"`
-	// 处理当前语句逻辑。
-	UserComments []map[string]interface{} `json:"user_comments"`
-	// 处理当前语句逻辑。
-	HotComments []map[string]interface{} `json:"hot_comments"`
-	// 处理当前语句逻辑。
-	LatestComments []map[string]interface{} `json:"latest_comments"`
-}
+// LotteryCommentGroups 为评论分组 DTO 的兼容别名。
+type LotteryCommentGroups = dto.LotteryCommentGroups

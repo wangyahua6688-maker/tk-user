@@ -8,7 +8,7 @@ import (
 )
 
 // ListForumTopics 返回论坛帖子列表（支持分栏、关键字、历史期号筛选）。
-func (r *Repository) ListForumTopics(ctx context.Context, query ForumTopicQuery) (ForumTopicListResult, error) {
+func (r *ForumRepository) ListForumTopics(ctx context.Context, query ForumTopicQuery) (ForumTopicListResult, error) {
 	// 1) 统一兜底 limit，避免一次性扫表过大。
 	if query.Limit <= 0 {
 		// 更新当前变量或字段值。
@@ -222,7 +222,7 @@ func (r *Repository) ListForumTopics(ctx context.Context, query ForumTopicQuery)
 }
 
 // loadForumHistoryFilters 加载历史贴筛选器（年份 + 期号）。
-func (r *Repository) loadForumHistoryFilters(
+func (r *ForumRepository) loadForumHistoryFilters(
 	// 处理当前语句逻辑。
 	ctx context.Context,
 	// 处理当前语句逻辑。

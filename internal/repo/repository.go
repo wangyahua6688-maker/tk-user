@@ -9,12 +9,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// Repository 评论微服务数据访问层。
-// 侧重点：
-// - 高频读（列表、分组）；
-// - 短期缓存（Redis）；
-// - 单次聚合查询，减少 N+1 开销。
-type Repository struct {
+// baseRepository 提供仓储层共享的底层依赖与通用缓存能力。
+type baseRepository struct {
 	// 处理当前语句逻辑。
 	db *gorm.DB
 	// 处理当前语句逻辑。
@@ -29,8 +25,8 @@ type Repository struct {
 	smsCodeTTL time.Duration
 }
 
-// NewRepository 创建论坛仓储层实例。
-func NewRepository(
+// newBaseRepository 创建共享仓储基础设施实例。
+func newBaseRepository(
 	// 处理当前语句逻辑。
 	db *gorm.DB,
 	// 处理当前语句逻辑。
@@ -44,7 +40,7 @@ func NewRepository(
 	// 处理当前语句逻辑。
 	smsCodeTTLSeconds int,
 	// 进入新的代码块进行处理。
-) *Repository {
+) *baseRepository {
 	// 默认缓存 10 秒，兼顾及时性与数据库压力。
 	ttl := 10 * time.Second
 	// 判断条件并进入对应分支逻辑。
@@ -74,7 +70,7 @@ func NewRepository(
 		codeTTL = time.Duration(smsCodeTTLSeconds) * time.Second
 	}
 	// 返回当前处理结果。
-	return &Repository{
+	return &baseRepository{
 		// 处理当前语句逻辑。
 		db: db,
 		// 处理当前语句逻辑。
@@ -91,7 +87,7 @@ func NewRepository(
 }
 
 // loadCache 从 Redis 读取缓存并反序列化。
-func (r *Repository) loadCache(ctx context.Context, key string, out any) bool {
+func (r *baseRepository) loadCache(ctx context.Context, key string, out any) bool {
 	// 统一复用 common-utils 的 Redis JSON 读取逻辑。
 	hit, err := redisx.GetJSON(ctx, r.redis, key, out)
 	// 判断条件并进入对应分支逻辑。
@@ -104,7 +100,7 @@ func (r *Repository) loadCache(ctx context.Context, key string, out any) bool {
 }
 
 // saveCache 将对象序列化后写入 Redis。
-func (r *Repository) saveCache(ctx context.Context, key string, data any) {
+func (r *baseRepository) saveCache(ctx context.Context, key string, data any) {
 	// 无 Redis 或 TTL 非法时不写缓存。
 	if r.redis == nil || r.cacheTTL <= 0 {
 		// 返回当前处理结果。

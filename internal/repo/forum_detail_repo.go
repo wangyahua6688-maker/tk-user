@@ -9,7 +9,7 @@ import (
 )
 
 // ForumTopicDetail 查询帖子详情（包含开奖块、作者信息、评论分组、历史贴）。
-func (r *Repository) ForumTopicDetail(ctx context.Context, postID uint) (map[string]interface{}, error) {
+func (r *ForumRepository) ForumTopicDetail(ctx context.Context, postID uint) (map[string]interface{}, error) {
 	// 1) postID 必须有效。
 	if postID == 0 {
 		// 返回当前处理结果。
@@ -121,7 +121,7 @@ func (r *Repository) ForumTopicDetail(ctx context.Context, postID uint) (map[str
 }
 
 // loadForumAuthorStats 聚合作者统计数据。
-func (r *Repository) loadForumAuthorStats(ctx context.Context, userID uint) (map[string]interface{}, error) {
+func (r *ForumRepository) loadForumAuthorStats(ctx context.Context, userID uint) (map[string]interface{}, error) {
 	// 1) user_id 无效时返回零值结构。
 	if userID == 0 {
 		// 返回当前处理结果。
@@ -237,7 +237,7 @@ func (r *Repository) loadForumAuthorStats(ctx context.Context, userID uint) (map
 }
 
 // listForumPostComments 查询帖子评论列表（含回复预览）。
-func (r *Repository) listForumPostComments(
+func (r *ForumRepository) listForumPostComments(
 	// 处理当前语句逻辑。
 	ctx context.Context,
 	// 处理当前语句逻辑。
@@ -347,7 +347,7 @@ func (r *Repository) listForumPostComments(
 }
 
 // listForumCommentReplies 查询指定一级评论下的回复预览。
-func (r *Repository) listForumCommentReplies(
+func (r *ForumRepository) listForumCommentReplies(
 	// 处理当前语句逻辑。
 	ctx context.Context,
 	// 处理当前语句逻辑。

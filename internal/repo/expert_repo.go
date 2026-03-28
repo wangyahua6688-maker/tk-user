@@ -7,7 +7,7 @@ import (
 )
 
 // ListExpertBoards 返回高手推荐榜单。
-func (r *Repository) ListExpertBoards(ctx context.Context, limit int, lotteryCode string) (map[string]interface{}, error) {
+func (r *ForumRepository) ListExpertBoards(ctx context.Context, limit int, lotteryCode string) (map[string]interface{}, error) {
 	// 1) 参数兜底，避免前端传入异常 limit。
 	if limit <= 0 {
 		// 更新当前变量或字段值。
@@ -20,7 +20,7 @@ func (r *Repository) ListExpertBoards(ctx context.Context, limit int, lotteryCod
 	}
 
 	// 2) 读取缓存，降低高并发榜单查询的 DB 压力。
-	cacheKey := fmt.Sprintf("tk:expert:boards:%s:%d", lotteryCode, limit)
+	cacheKey := fmt.Sprintf("tk:expert:boards:v2:%s:%d", lotteryCode, limit)
 	// 定义并初始化当前变量。
 	cacheHit := map[string]interface{}{}
 	// 判断条件并进入对应分支逻辑。
@@ -163,83 +163,124 @@ func (r *Repository) ListExpertBoards(ctx context.Context, limit int, lotteryCod
 		})
 	}
 
-	// 5) 按综合分降序排列，并构建分组榜单。
-	sort.SliceStable(candidates, func(i, j int) bool {
-		// 返回当前处理结果。
-		return candidates[i].Score > candidates[j].Score
-	})
-	// 定义并初始化当前变量。
-	topN := candidates
-	// 判断条件并进入对应分支逻辑。
-	if len(topN) > limit {
-		// 更新当前变量或字段值。
-		topN = topN[:limit]
-	}
-	// 定义并初始化当前变量。
-	buildGroup := func(key string, title string, pick func(item expertItem, idx int) bool) map[string]interface{} {
-		// 定义并初始化当前变量。
+	// 5) 每个榜单按自己的维度独立排序，保证前端切换 tab 时能看到真实变化。
+	buildRankItems := func(source []expertItem, label func(item expertItem) string) []map[string]interface{} {
 		items := make([]map[string]interface{}, 0, limit)
-		// 定义并初始化当前变量。
-		rank := 0
-		// 循环处理当前数据集合。
-		for idx, item := range topN {
-			// 判断条件并进入对应分支逻辑。
-			if !pick(item, idx) {
-				// 处理当前语句逻辑。
-				continue
-			}
-			// 处理当前语句逻辑。
-			rank++
-			// 更新当前变量或字段值。
+		for idx, item := range source {
 			items = append(items, map[string]interface{}{
-				// 处理当前语句逻辑。
-				"rank": rank,
-				// 处理当前语句逻辑。
-				"user_id": item.UserID,
-				// 处理当前语句逻辑。
-				"nickname": item.Nickname,
-				// 处理当前语句逻辑。
-				"avatar": item.Avatar,
-				// 处理当前语句逻辑。
-				"user_type": item.UserType,
-				// 处理当前语句逻辑。
-				"hit_rate": item.HitRate,
-				// 处理当前语句逻辑。
-				"streak": item.Streak,
-				// 处理当前语句逻辑。
-				"return_rate": item.ReturnRate,
-				// 处理当前语句逻辑。
-				"score_label": item.ScoreLabel,
-				// 调用fmt.Sprintf完成当前处理。
+				"rank":         idx + 1,
+				"user_id":      item.UserID,
+				"nickname":     item.Nickname,
+				"avatar":       item.Avatar,
+				"user_type":    item.UserType,
+				"hit_rate":     item.HitRate,
+				"streak":       item.Streak,
+				"return_rate":  item.ReturnRate,
+				"score_label":  label(item),
 				"streak_label": fmt.Sprintf("%d连中", item.Streak),
 			})
-			// 判断条件并进入对应分支逻辑。
 			if len(items) >= limit {
-				// 处理当前语句逻辑。
 				break
 			}
 		}
-		// 返回当前处理结果。
+		return items
+	}
+
+	buildGroup := func(
+		key string,
+		title string,
+		filter func(item expertItem) bool,
+		less func(left expertItem, right expertItem) bool,
+		label func(item expertItem) string,
+	) map[string]interface{} {
+		ranked := make([]expertItem, 0, len(candidates))
+		for _, item := range candidates {
+			if filter(item) {
+				ranked = append(ranked, item)
+			}
+		}
+		sort.SliceStable(ranked, func(i, j int) bool {
+			return less(ranked[i], ranked[j])
+		})
+		if len(ranked) > limit {
+			ranked = ranked[:limit]
+		}
 		return map[string]interface{}{
-			// 处理当前语句逻辑。
-			"key": key,
-			// 处理当前语句逻辑。
+			"key":   key,
 			"title": title,
-			// 处理当前语句逻辑。
-			"items": items,
+			"items": buildRankItems(ranked, label),
 		}
 	}
 
-	// 定义并初始化当前变量。
 	groups := []map[string]interface{}{
-		// 调用buildGroup完成当前处理。
-		buildGroup("total", "总榜", func(_ expertItem, _ int) bool { return true }),
-		// 调用buildGroup完成当前处理。
-		buildGroup("pingteyi", "平特一肖", func(item expertItem, _ int) bool { return item.HitRate >= 55 }),
-		// 调用buildGroup完成当前处理。
-		buildGroup("jiuxiao", "九肖中特", func(item expertItem, _ int) bool { return item.Streak >= 3 }),
-		// 调用buildGroup完成当前处理。
-		buildGroup("wuma", "五码中特", func(item expertItem, _ int) bool { return item.ReturnRate >= 1200 }),
+		buildGroup(
+			"total",
+			"总榜",
+			func(_ expertItem) bool { return true },
+			func(left expertItem, right expertItem) bool {
+				if left.Score != right.Score {
+					return left.Score > right.Score
+				}
+				if left.HitRate != right.HitRate {
+					return left.HitRate > right.HitRate
+				}
+				return left.Streak > right.Streak
+			},
+			func(item expertItem) string {
+				return fmt.Sprintf("近30期综合表现 %d 分", item.Score)
+			},
+		),
+		buildGroup(
+			"pingteyi",
+			"平特一肖",
+			func(item expertItem) bool { return item.HitRate >= 50 },
+			func(left expertItem, right expertItem) bool {
+				if left.HitRate != right.HitRate {
+					return left.HitRate > right.HitRate
+				}
+				if left.Streak != right.Streak {
+					return left.Streak > right.Streak
+				}
+				return left.Score > right.Score
+			},
+			func(item expertItem) string {
+				return fmt.Sprintf("平特一肖近30期命中率 %d%%", item.HitRate)
+			},
+		),
+		buildGroup(
+			"jiuxiao",
+			"九肖中特",
+			func(item expertItem) bool { return item.Streak >= 3 },
+			func(left expertItem, right expertItem) bool {
+				if left.Streak != right.Streak {
+					return left.Streak > right.Streak
+				}
+				if left.HitRate != right.HitRate {
+					return left.HitRate > right.HitRate
+				}
+				return left.Score > right.Score
+			},
+			func(item expertItem) string {
+				return fmt.Sprintf("九肖中特当前最长 %d 连中", item.Streak)
+			},
+		),
+		buildGroup(
+			"wuma",
+			"五码中特",
+			func(item expertItem) bool { return item.ReturnRate >= 1200 },
+			func(left expertItem, right expertItem) bool {
+				if left.ReturnRate != right.ReturnRate {
+					return left.ReturnRate > right.ReturnRate
+				}
+				if left.HitRate != right.HitRate {
+					return left.HitRate > right.HitRate
+				}
+				return left.Score > right.Score
+			},
+			func(item expertItem) string {
+				return fmt.Sprintf("五码中特回报率 %d%%", item.ReturnRate)
+			},
+		),
 	}
 
 	// 6) 组装返回结构并写缓存。

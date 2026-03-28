@@ -10,6 +10,7 @@ import (
 	"tk-user/internal/config"
 	"tk-user/internal/platform/database"
 	"tk-user/internal/repo"
+	"tk-user/internal/services"
 )
 
 // ServiceContext 用户域服务上下文。
@@ -18,8 +19,10 @@ type ServiceContext struct {
 	Config config.Config
 	// Redis 供仓储层缓存复用（列表缓存、评论分组缓存）。
 	Redis *redis.Client
-	// CommentRepo 用户域论坛/评论仓储。
-	CommentRepo *repo.Repository
+	// AuthService 用户域鉴权服务。
+	AuthService *services.AuthService
+	// ForumService 用户域论坛服务。
+	ForumService *services.ForumService
 }
 
 // NewServiceContext 创建ServiceContext实例。
@@ -53,21 +56,31 @@ func NewServiceContext(c config.Config) (*ServiceContext, error) {
 		return nil, fmt.Errorf("init redis failed: %w", err)
 	}
 
-	// 3) 构建论坛仓储层，注入 DB + Redis + 缓存 TTL。
-	commentRepo := repo.NewRepository(
-		// 处理当前语句逻辑。
+	// 3) 按模块构建仓储层，注入 DB + Redis + 缓存与会话配置。
+	authRepo := repo.NewAuthRepository(
 		db,
-		// 处理当前语句逻辑。
 		redisClient,
-		// 处理当前语句逻辑。
 		c.CacheRedis.CacheTTLSeconds,
-		// 处理当前语句逻辑。
 		c.UserAuth.AccessTokenTTLSeconds,
-		// 处理当前语句逻辑。
 		c.UserAuth.RefreshTokenTTLSeconds,
-		// 处理当前语句逻辑。
 		c.UserAuth.SMSCodeTTLSeconds,
 	)
+	forumRepo := repo.NewForumRepository(
+		db,
+		redisClient,
+		c.CacheRedis.CacheTTLSeconds,
+		c.UserAuth.AccessTokenTTLSeconds,
+		c.UserAuth.RefreshTokenTTLSeconds,
+		c.UserAuth.SMSCodeTTLSeconds,
+	)
+	// 4) 构建服务层，显式表达模块边界。
+	authService := services.NewAuthService(authRepo)
+	forumService := services.NewForumService(forumRepo)
 	// 4) 返回服务上下文。
-	return &ServiceContext{Config: c, Redis: redisClient, CommentRepo: commentRepo}, nil
+	return &ServiceContext{
+		Config:       c,
+		Redis:        redisClient,
+		AuthService:  authService,
+		ForumService: forumService,
+	}, nil
 }

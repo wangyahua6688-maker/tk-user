@@ -7,15 +7,46 @@ import (
 
 	tkv1 "github.com/wangyahua6688-maker/tk-proto/gen/go/tk/v1"
 	"gorm.io/gorm"
-	"tk-user/internal/repo"
+	"tk-user/internal/dto"
+	"tk-user/internal/svc"
 )
 
+// forumService 定义论坛相关依赖。
+type forumService interface {
+	ListTopics(ctx context.Context, limit int) ([]map[string]interface{}, error)
+	ListForumTopics(ctx context.Context, query dto.ForumTopicQuery) (dto.ForumTopicListResult, error)
+	ForumTopicDetail(ctx context.Context, postID uint) (map[string]interface{}, error)
+	ListForumAuthorHistory(ctx context.Context, userID uint, limit int, issue string, year int) ([]map[string]interface{}, error)
+	ListExpertBoards(ctx context.Context, limit int, lotteryCode string) (map[string]interface{}, error)
+	LotteryCommentGroups(ctx context.Context, infoID uint) (dto.LotteryCommentGroups, error)
+}
+
+// ForumRPC 负责论坛、高手榜、评论分组相关 RPC。
+type ForumRPC struct {
+	forumSvc forumService
+}
+
+// ForumRPCDeps 定义论坛模块依赖。
+type ForumRPCDeps struct {
+	ForumService forumService
+}
+
+// NewForumRPC 根据服务上下文创建论坛模块 RPC。
+func NewForumRPC(ctx *svc.ServiceContext) *ForumRPC {
+	return NewForumRPCWithDeps(ForumRPCDeps{ForumService: ctx.ForumService})
+}
+
+// NewForumRPCWithDeps 使用显式依赖创建论坛模块 RPC。
+func NewForumRPCWithDeps(deps ForumRPCDeps) *ForumRPC {
+	return &ForumRPC{forumSvc: deps.ForumService}
+}
+
 // TopicList 返回论坛帖子列表（旧兼容接口）。
-func (s *UserServer) TopicList(ctx context.Context, req *tkv1.TopicListRequest) (*tkv1.JsonDataReply, error) {
+func (f *ForumRPC) TopicList(ctx context.Context, req *tkv1.TopicListRequest) (*tkv1.JsonDataReply, error) {
 	// 1) 旧接口默认走 all 分栏。
 	limit := int(req.GetLimit())
 	// 定义并初始化当前变量。
-	items, err := s.ctx.CommentRepo.ListTopics(ctx, limit)
+	items, err := f.forumSvc.ListTopics(ctx, limit)
 	// 判断条件并进入对应分支逻辑。
 	if err != nil {
 		// 返回当前处理结果。
@@ -33,9 +64,9 @@ func (s *UserServer) TopicList(ctx context.Context, req *tkv1.TopicListRequest) 
 }
 
 // ForumTopics 返回论坛列表（新接口，支持 feed/keyword）。
-func (s *UserServer) ForumTopics(ctx context.Context, req *tkv1.ForumTopicsRequest) (*tkv1.JsonDataReply, error) {
+func (f *ForumRPC) ForumTopics(ctx context.Context, req *tkv1.ForumTopicsRequest) (*tkv1.JsonDataReply, error) {
 	// 1) 读取分页与筛选参数。
-	query := repo.ForumTopicQuery{
+	query := dto.ForumTopicQuery{
 		// 调用int完成当前处理。
 		Limit: int(req.GetLimit()),
 		// 调用strings.TrimSpace完成当前处理。
@@ -48,7 +79,7 @@ func (s *UserServer) ForumTopics(ctx context.Context, req *tkv1.ForumTopicsReque
 		Year: int(req.GetYear()),
 	}
 	// 2) 执行论坛查询。
-	result, err := s.ctx.CommentRepo.ListForumTopics(ctx, query)
+	result, err := f.forumSvc.ListForumTopics(ctx, query)
 	// 判断条件并进入对应分支逻辑。
 	if err != nil {
 		// 返回当前处理结果。
@@ -83,7 +114,7 @@ func (s *UserServer) ForumTopics(ctx context.Context, req *tkv1.ForumTopicsReque
 }
 
 // ForumTopicDetail 返回论坛帖子详情（含开奖块、作者统计、评论分组）。
-func (s *UserServer) ForumTopicDetail(ctx context.Context, req *tkv1.ForumTopicDetailRequest) (*tkv1.JsonDataReply, error) {
+func (f *ForumRPC) ForumTopicDetail(ctx context.Context, req *tkv1.ForumTopicDetailRequest) (*tkv1.JsonDataReply, error) {
 	// 1) 帖子ID 必填。
 	postID := uint(req.GetPostId())
 	// 判断条件并进入对应分支逻辑。
@@ -92,7 +123,7 @@ func (s *UserServer) ForumTopicDetail(ctx context.Context, req *tkv1.ForumTopicD
 		return &tkv1.JsonDataReply{Code: 40031, Msg: "invalid post id"}, nil
 	}
 	// 2) 查询详情聚合数据。
-	payload, err := s.ctx.CommentRepo.ForumTopicDetail(ctx, postID)
+	payload, err := f.forumSvc.ForumTopicDetail(ctx, postID)
 	// 判断条件并进入对应分支逻辑。
 	if err != nil {
 		// 判断条件并进入对应分支逻辑。
@@ -108,7 +139,7 @@ func (s *UserServer) ForumTopicDetail(ctx context.Context, req *tkv1.ForumTopicD
 }
 
 // ForumAuthorHistory 返回作者历史发帖列表。
-func (s *UserServer) ForumAuthorHistory(ctx context.Context, req *tkv1.ForumAuthorHistoryRequest) (*tkv1.JsonDataReply, error) {
+func (f *ForumRPC) ForumAuthorHistory(ctx context.Context, req *tkv1.ForumAuthorHistoryRequest) (*tkv1.JsonDataReply, error) {
 	// 1) 校验用户ID。
 	userID := uint(req.GetUserId())
 	// 判断条件并进入对应分支逻辑。
@@ -117,7 +148,7 @@ func (s *UserServer) ForumAuthorHistory(ctx context.Context, req *tkv1.ForumAuth
 		return &tkv1.JsonDataReply{Code: 40032, Msg: "invalid user id"}, nil
 	}
 	// 2) 查询作者历史贴列表。
-	items, err := s.ctx.CommentRepo.ListForumAuthorHistory(
+	items, err := f.forumSvc.ListForumAuthorHistory(
 		// 处理当前语句逻辑。
 		ctx,
 		// 处理当前语句逻辑。
@@ -150,9 +181,9 @@ func (s *UserServer) ForumAuthorHistory(ctx context.Context, req *tkv1.ForumAuth
 }
 
 // ExpertBoards 返回高手推荐榜单。
-func (s *UserServer) ExpertBoards(ctx context.Context, req *tkv1.ExpertBoardsRequest) (*tkv1.JsonDataReply, error) {
+func (f *ForumRPC) ExpertBoards(ctx context.Context, req *tkv1.ExpertBoardsRequest) (*tkv1.JsonDataReply, error) {
 	// 1) 拉取榜单分组数据。
-	payload, err := s.ctx.CommentRepo.ListExpertBoards(ctx, int(req.GetLimit()), req.GetLotteryCode())
+	payload, err := f.forumSvc.ListExpertBoards(ctx, int(req.GetLimit()), req.GetLotteryCode())
 	// 判断条件并进入对应分支逻辑。
 	if err != nil {
 		// 返回当前处理结果。
@@ -163,14 +194,14 @@ func (s *UserServer) ExpertBoards(ctx context.Context, req *tkv1.ExpertBoardsReq
 }
 
 // LotteryCommentGroups 返回彩种详情页评论分组。
-func (s *UserServer) LotteryCommentGroups(ctx context.Context, req *tkv1.LotteryCommentGroupsRequest) (*tkv1.JsonDataReply, error) {
+func (f *ForumRPC) LotteryCommentGroups(ctx context.Context, req *tkv1.LotteryCommentGroupsRequest) (*tkv1.JsonDataReply, error) {
 	// 1) lottery_info_id 必填。
 	if req.GetLotteryInfoId() == 0 {
 		// 返回当前处理结果。
 		return &tkv1.JsonDataReply{Code: 40012, Msg: "invalid lottery info id"}, nil
 	}
 	// 2) 查询系统/网友/热门/最新评论四组数据。
-	payload, err := s.ctx.CommentRepo.LotteryCommentGroups(ctx, uint(req.GetLotteryInfoId()))
+	payload, err := f.forumSvc.LotteryCommentGroups(ctx, uint(req.GetLotteryInfoId()))
 	// 判断条件并进入对应分支逻辑。
 	if err != nil {
 		// 返回当前处理结果。

@@ -6,7 +6,7 @@ import (
 )
 
 // ListForumAuthorHistory 查询指定用户的历史发帖列表。
-func (r *Repository) ListForumAuthorHistory(
+func (r *ForumRepository) ListForumAuthorHistory(
 	// 处理当前语句逻辑。
 	ctx context.Context,
 	// 处理当前语句逻辑。
