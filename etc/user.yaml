@@ -6,7 +6,7 @@ Database:
   DSN: "tkuser:TkUser_Pass2026!@tcp(mysql:3306)/nb_sys_001?charset=utf8mb4&parseTime=True&loc=Asia%2FShanghai"
 
 CacheRedis:
-  Addr: "127.0.0.1:6379"
+  Addr: "redis:6379"
   Password: ""
   DB: 0
   CacheTTLSeconds: 10
