@@ -8,8 +8,8 @@ go 1.24
 require (
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/google/uuid v1.6.0
-	github.com/wangyahua6688-maker/tk-common v1.0.6
-	github.com/wangyahua6688-maker/tk-proto v1.0.2
+	github.com/wangyahua6688-maker/tk-common v1.0.7
+	github.com/wangyahua6688-maker/tk-proto v1.0.3
 	github.com/zeromicro/go-zero v1.10.0
 	golang.org/x/crypto v0.41.0
 	google.golang.org/grpc v1.65.0
